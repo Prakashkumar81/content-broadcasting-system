@@ -1,0 +1,142 @@
+========================================
+  CONTENT BROADCASTING SYSTEM
+  Frontend Technical Notes
+========================================
+
+1. PROJECT STRUCTURE
+--------------------
+app/
+  layout.tsx              - Root layout with ThemeProvider, AuthProvider, Toaster
+  page.tsx                - Root redirect (auth-based routing)
+  login/page.tsx          - Authentication page (login + register)
+  auth/callback/page.tsx  - Auth callback redirect
+  teacher/
+    dashboard/page.tsx    - Teacher dashboard with stats and recent content
+    upload/page.tsx       - Content upload form with file preview
+    content/page.tsx      - Teacher's content list with filters
+  principal/
+    dashboard/page.tsx    - Principal dashboard with stats and all content
+    approvals/page.tsx    - Pending approvals with approve/reject actions
+    content/page.tsx      - All content with search and status filters
+  live/
+    [teacherId]/page.tsx  - Public live broadcast page (no auth required)
+
+components/
+  app-layout.tsx          - Sidebar + header layout with dark mode toggle
+  protected-route.tsx     - Auth guard with role-based access control
+  status-badge.tsx        - Content status and schedule status badges
+  stats-cards.tsx         - Dashboard statistics cards
+  content-table.tsx       - Reusable content table with actions
+  content-preview-modal.tsx - Content detail preview dialog
+  reject-modal.tsx        - Rejection reason modal (mandatory reason)
+  empty-state.tsx         - Empty data placeholder
+  skeleton-table.tsx      - Loading skeleton components
+  theme-provider.tsx      - Dark mode theme provider wrapper
+  ui/                     - shadcn/ui component library
+
+context/
+  auth-context.tsx        - Authentication state management
+
+services/
+  auth.service.ts         - Authentication API calls (signIn, signUp, signOut, getProfile)
+  content.service.ts      - Content CRUD, file upload, stats, scheduling
+  approval.service.ts     - Approve/reject content operations
+
+lib/
+  supabase.ts             - Supabase client singleton
+  types.ts                - TypeScript type definitions
+  utils.ts                - Utility functions (cn helper)
+
+
+2. AUTHENTICATION FLOW
+----------------------
+- Uses Supabase Auth (email/password)
+- AuthProvider wraps the entire app, providing:
+  - user: current Supabase auth user
+  - profile: user profile with role (teacher/principal)
+  - login/register/logout methods
+- On app load, AuthProvider checks for existing session
+- ProtectedRoute component guards authenticated pages
+  - Redirects unauthenticated users to /login
+  - Redirects wrong-role users to their correct dashboard
+- Registration creates both auth user and profile record
+- Token is managed by Supabase client automatically
+
+
+3. ROLE-BASED ROUTING
+---------------------
+- Root page (/) auto-redirects based on role:
+  - teacher -> /teacher/dashboard
+  - principal -> /principal/dashboard
+  - unauthenticated -> /login
+
+- Teacher routes (allowedRoles: ['teacher']):
+  - /teacher/dashboard
+  - /teacher/upload
+  - /teacher/content
+
+- Principal routes (allowedRoles: ['principal']):
+  - /principal/dashboard
+  - /principal/approvals
+  - /principal/content
+
+- Public routes (no auth):
+  - /login
+  - /live/[teacherId]
+
+
+4. API INTEGRATION APPROACH
+---------------------------
+- All API calls go through a dedicated service layer (services/)
+- No direct API calls inside components
+- Services use the Supabase client singleton
+- Each service function handles a single responsibility:
+  - auth.service: signIn, signUp, signOut, getProfile, getSession
+  - content.service: uploadContent, getTeacherContent, getAllContent,
+    getPendingContent, getLiveContent, getContentStats, uploadFile,
+    getSchedulingStatus
+  - approval.service: approveContent, rejectContent
+
+- Replaceable API Design:
+  - Services return typed data (ContentItem[], Profile, etc.)
+  - Components only consume service functions
+  - To switch backends, replace service implementations only
+  - Component interfaces remain unchanged
+
+- Error handling pattern:
+  - Service functions throw errors
+  - Components catch errors in try/catch
+  - Toast notifications display user-friendly error messages
+  - Loading states prevent UI from breaking during async operations
+
+
+5. STATE MANAGEMENT APPROACH
+----------------------------
+- React Context for global auth state (AuthProvider)
+- Local component state (useState) for page-specific data
+- useMemo for derived/filtered data (search, filters)
+- useCallback for stable function references (polling, effects)
+- No external state library needed - the app scope is manageable
+- State is kept minimal and close to where it's used
+
+Key state patterns:
+- Loading states: boolean flags for async operations
+- Error states: string | null for error messages
+- Data states: typed arrays/objects from service calls
+- Filter states: search string + status filter value
+
+
+6. ASSUMPTIONS
+--------------
+- Supabase is the backend (auth + database + storage)
+- Email confirmation is disabled (per Supabase defaults)
+- File uploads are images only (JPG, PNG, GIF) with 10MB limit
+- Content scheduling is UI-based (status derived from start/end times)
+- Live page auto-refreshes every 30 seconds via polling
+- Rejection reason is mandatory when rejecting content
+- Teachers can only see and manage their own content
+- Principals can see all content and approve/reject
+- Public live page shows only approved + currently active content
+- Dark mode is supported via next-themes with system preference detection
+- The app uses Next.js App Router (not Pages Router)
+- All pages are client components ('use client') due to auth/hooks usage
